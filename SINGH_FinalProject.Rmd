@@ -1,0 +1,750 @@
+---
+---
+---
+
+## 220:422 & 219:531 ADM&ML
+
+# Final Project, Spring 2024
+
+## Goal: Build Two Classifiers to identify "mdeSI" among adolescents
+
+# Naman Singh
+
+NS1588
+
+```{r}
+
+```
+
+```{r}
+library(readr)
+da <- read_csv("depression.csv")
+library(corrplot)
+library(ggplot2)
+library(treemap)
+library(tidyr)
+library(MASS)
+library(mixlm)
+library(randomForest)
+library(RColorBrewer)
+library(plotly)
+options(scipen = 999)
+
+#I have modified the original data to make it more balanced in the target variable
+#The proportions of the depressive cases are about the same in the "depression.csv" file
+dim(da) #6,000 by 12
+str(da)
+
+da$mdeSI = factor(da$mdeSI)
+da$income = factor(da$income)
+da$gender = factor(da$gender, levels = c("Male", "Female")) #Male is the reference group
+da$age = factor(da$age)
+da$race = factor(da$race, levels = c("White", "Hispanic", "Black", "Asian/NHPIs", "Other")) #white is the reference
+da$insurance = factor(da$insurance, levels = c("Yes", "No")) #"Yes" is the reference group
+da$siblingU18 = factor(da$siblingU18, levels = c("Yes", "No"))
+da$fatherInHH = factor(da$fatherInHH)
+da$motherInHH = factor(da$motherInHH)
+da$parentInv = factor(da$parentInv)
+da$schoolExp = factor(da$schoolExp, levels = c("good school experiences", "bad school experiences"))
+
+(n = dim(da)[1])
+set.seed(2024)
+index = sample(1:n, 4500) #75% of training and 25% of test data
+train = da[index,] 
+test = da[-index,]
+dim(train)
+dim(test)
+
+```
+
+\
+\
+
+## The entries in the column have been converted as factors for the model and we have divided the dataset into test and train dataset.
+
+## Our next task is Data Exploration and Features Selection
+
+## DATA EXPLORATION
+
+```{r}
+sapply(da, class)
+
+# Unique values and their counts for each categorical variable
+unique_counts <- function(x) {
+  unique_values <- unique(x)
+  num_unique <- length(unique_values)
+  return(list(unique_values = unique_values, num_unique = num_unique))
+}
+income_info <- unique_counts(da$income)
+gender_info <- unique_counts(da$gender)
+age_info <- unique_counts(da$age)
+race_info <- unique_counts(da$race)
+insurance_info <- unique_counts(da$insurance)
+fatherInHH_info <- unique_counts(da$fatherInHH)
+motherInHH_info <- unique_counts(da$motherInHH)
+siblingU18_info <- unique_counts(da$siblingU18)
+parentInv_info <- unique_counts(da$parentInv)
+schoolExp_info <- unique_counts(da$schoolExp)
+income_info
+gender_info
+age_info
+race_info
+insurance_info
+fatherInHH_info
+motherInHH_info
+siblingU18_info
+parentInv_info
+schoolExp_info
+
+```
+
+### income_info:
+
+-   \<20,000
+
+-   20,000 - 49,999
+
+-   50,000 - 74,999
+
+-   75,000 or more
+
+Unique Values : 4
+
+### gender_info:
+
+-   Male
+
+-   Female
+
+Unique Values : 2
+
+### age_info:
+
+-   14-15
+
+-   16-17
+
+-   12-13
+
+Unique Values : 3
+
+### race_info:
+
+-   White
+
+-   Hispanic
+
+-   Black
+
+-   Asian/NHPIs
+
+-   Other
+
+Unique Values: 5
+
+### insurance_info:
+
+-   Yes
+
+-   No
+
+Unique Values: 2
+
+### fatherInHH_info:
+
+-   father in hh
+
+-   no father in hh
+
+Unique Values: 2
+
+### motherInHH_info:
+
+-   mother in hh
+
+-   no mother in hh
+
+Unique Values: 2
+
+### siblingU18_info:
+
+-   Yes
+
+-   No
+
+Unique Values: 2
+
+### parentInv_info:
+
+-   good school experiences
+
+-   bad school experiences
+
+Unique Values: 2
+
+### schoolExp_info:
+
+-   good school experiences
+
+-   bad school experiences
+
+Unique Values : 2
+
+### Now we know the dataset. We can now go ahead with the feature Selection.
+
+# FEATURE SELECTION:
+
+### - YEAR:
+
+```{r}
+# Year distribution
+ggplot(da, aes(x = year, fill = mdeSI)) +
+  geom_bar(position = "stack") +
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5) +
+  labs(title = "Distribution of mdeSI by Year")
+
+```
+
+### Analysis:
+
+We can see that the number of cases of mdeSI is more in the year 2016 and 2017 compared to the year 2015.
+
+### - **GENDER**: Analysis on Gender vs mdeSI (Depression)
+
+```{r}
+ggplot(da, aes(x = gender, fill = mdeSI)) +
+   geom_bar(position = "stack") +
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5) +
+  labs(title = "Distribution of mdeSI by Gender")
+
+
+```
+
+### Analysis:
+
+This graph shows that the cases of depression is more in Females compared to Male. We will further dig deep into the dataset and analyse other factors and their relative effects on each other.
+
+### - **AGE**: Analysis on AGE vs mdeSI (Depression)
+
+```{r}
+# Age distribution
+ggplot(da, aes(x = age, fill = mdeSI)) +
+   geom_bar(position = "stack") +
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5) +
+  labs(title = "Distribution of mdeSI by Age")
+
+```
+
+### Analysis:
+
+We can see that there is an increase in mdSI cases with the increase in age.
+
+### - **RACE**: Analysis on RACE vs mdeSI (Depression)
+
+```{r}
+# Race distribution
+ggplot(da, aes(x = race, fill = mdeSI)) +
+   geom_bar(position = "stack") +
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5) +
+  labs(title = "Distribution of mdeSI by Race")
+
+```
+
+### Analysis:
+
+Compared to the 5 ethnicity, we can see that the White, Hispanic have more major depressive episode with severe impairment compared to Blacks, Asian/NHPIs and other ethnicities.
+
+### - **INSURANCE**: Analysis on **INSURANCE** vs mdeSI (Depression)
+
+```{r}
+# Insurance distribution
+ggplot(da, aes(x = insurance, fill = mdeSI)) +
+   geom_bar(position = "stack") +
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5) +
+  labs(title = "Distribution of mdeSI by Insurance")
+
+```
+
+### Analysis:
+
+The data indicates that a significantly higher number of people with insurance report cases of mdeSI compared to those without insurance. Specifically, those with insurance have a balanced distribution of "Yes" and "No" responses, while the number of mdeSI cases among uninsured individuals is very low, suggesting that having insurance is associated with a higher reporting of mdeSI cases or greater access to diagnostic services.
+
+### - **INCOME**: Analysis on **INCOME** vs mdeSI (Depression)
+
+```{r}
+# Income distribution
+ggplot(da, aes(x = income, fill = mdeSI)) +
+   geom_bar(position = "stack") +
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5) +
+  labs(title = "Distribution of mdeSI by Income")
+
+# Income distribution
+
+```
+
+### Analysis:
+
+This graph shows that as income increases, the number of reported mdeSI cases also increases, particularly for the "Yes" responses. The highest income bracket (\$75,000 or more) not only has a greater total number of responses but also a higher proportion of "Yes" responses compared to "No." This trend may indicate either an increased prevalence of mdeSI symptoms among higher income individuals or possibly better access to healthcare and diagnostic services that lead to more reporting or diagnosis.
+
+### - **Father in Household** : Analysis on **Father in Household** vs mdeSI (Depression)
+
+```{r}
+# Father in Household distribution
+ggplot(da, aes(x = fatherInHH, fill = mdeSI)) +
+   geom_bar(position = "stack") +
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5) +
+  labs(title = "Distribution of mdeSI by Father in Household")
+
+```
+
+### Analysis:
+
+The presence of a father in the household correlates with a higher total number of mdeSI cases, both "Yes" and "No," compared to households without a father. Households with no father show significantly fewer total responses, suggesting either a lower occurrence of mdeSI or less reporting/diagnosis in these settings.
+
+### - **Mother in Household**: Analysis on **Mother in Household** vs mdeSI (Depression)
+
+```{r}
+# Mother in Household distribution
+
+# Create the ggplot
+ggplot(da, aes(x = motherInHH, fill = mdeSI)) +
+  geom_bar(position = "stack") + # Stacks the bar for different mdeSI values within the same motherInHH category
+  geom_text(stat='count', aes(label=..count..), position=position_stack(vjust = 0.5), color="black", size=3.5) + # Adjust text position and make it more visible
+  labs(title = "Distribution of mdeSI by Mother in Household",
+       x = "Mother in Household",
+       y = "Count",
+       fill = "mdeSI Status") +
+  theme_minimal() + # Uses a minimal theme for cleaner look
+  theme(axis.text.x = element_text(angle=0)) # Ensures x-axis labels are horizontal for better readability
+
+
+```
+
+### Analysis:
+
+Households with a mother present show substantially higher total numbers of mdeSI cases, both "Yes" and "No," compared to households without a mother. The small number of responses in households without a mother suggests significantly lower occurrences or reporting of mdeSI cases in these environments.
+
+### - **Siblings Under 18**: Analysis on **Siblings Under 18** vs mdeSI (Depression)
+
+```{r}
+# Siblings under 18 distribution
+ggplot(da, aes(x = siblingU18, fill = mdeSI)) +
+ geom_bar(position = "stack") +
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5) +
+  labs(title = "Distribution of mdeSI by Siblings Under 18")
+
+```
+
+### Analysis:
+
+Households with siblings under 18 report a higher number of mdeSI cases, both "Yes" and "No," compared to those without siblings under 18. The presence of siblings correlates with a significantly larger total count of cases.
+
+### - **Parenting Environment** : Analysis on **Parenting Environment** vs mdeSI (Depression)
+
+```{r}
+# Parenting environment distribution
+ggplot(da, aes(x = parentInv, fill = mdeSI)) +
+   geom_bar(position = "stack") +
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5) +
+  labs(title = "Distribution of mdeSI by Parenting Environment")
+
+```
+
+### Analysis:
+
+High parental involvement correlates with a substantially higher total count of mdeSI cases, both "Yes" and "No," compared to environments with low parental involvement.
+
+### - **School Experience** : Analysis on **School Experience** vs mdeSI (Depression)
+
+```{r}
+# School experience distribution
+ggplot(da, aes(x = schoolExp, fill = mdeSI)) +
+   geom_bar(position = "stack") +
+  geom_text(stat='count', aes(label=..count..), vjust=-0.5) +
+  labs(title = "Distribution of mdeSI by School Experience")
+
+```
+
+### Analysis:
+
+The graph suggests that good school experiences correlate with higher overall reports of mdeSI but a lower proportion of positive mdeSI diagnoses, while bad school experiences are linked to fewer total reports but a higher rate of positive mdeSI diagnoses, indicating a significant impact of school experiences on mental health outcomes.
+
+### USING CHI SQUARE TEST:
+
+```{r}
+
+
+# Verify columns exist and then perform chi-square tests
+variables_to_test <- c("year", "gender", "age", "race", "insurance", "income",
+                       "fatherInHH", "motherInHH", "siblingU18", "parentInv", "schoolExp")
+
+results <- lapply(variables_to_test, function(var) {
+  if (var %in% colnames(da)) {
+    test_result <- chisq.test(table(da$mdeSI, da[[var]]))
+    # Making sure to extract the actual chi-squared value and p-value as numeric values
+    return(data.frame(Variable = var, Chi_square_value = as.numeric(test_result$statistic), p_value = as.numeric(test_result$p.value)))
+  } else {
+    # Return a data frame directly with NA values for missing variables
+    return(data.frame(Variable = var, Chi_square_value = NA, p_value = NA, Note = "Variable not in dataframe"))
+  }
+})
+
+# Convert list of data frames into a single data frame
+results_df <- do.call(rbind, results)
+options(scipen = -2)
+# Print the results
+print(results_df)
+
+
+```
+
+### Analysis:
+
+Almost all the factors are significant at 0.01 alpha level. However, if consider 0.05 we have two factors that which are showing as insignificant. That are insurance and mother in households.
+
+### Correlation plot:
+
+```{r}
+d = da
+d$mdeSI <- ifelse(d$mdeSI == "Yes", 1, 0)
+d$gender = as.numeric(unclass(d$gender))
+d$age = as.numeric(unclass(d$age))
+d$race = as.numeric(unclass(d$race))
+d$insurance = as.numeric(unclass(d$insurance))
+d$income = as.numeric(unclass(d$income))
+d$fatherInHH = as.numeric(unclass(d$fatherInHH))
+d$motherInHH = as.numeric(unclass(d$motherInHH))
+d$siblingU18 = as.numeric(unclass(d$siblingU18))
+d$parentInv = as.numeric(unclass(d$parentInv))
+d$schoolExp = as.numeric(unclass(d$schoolExp))
+
+(n2 = dim(d)[1])
+set.seed(2024)
+
+#Total dataset has been divided into 75% of training data and 25% of test data
+index_2 = sample(1:n2, 4500) 
+train_2 = d[index_2,] 
+test_2 = d[-index_2,]
+dim(train_2)
+dim(test_2)
+mcor = round(cor(d),2)
+
+#Plotting correlation 
+corrplot(mcor, type = "lower")
+```
+
+## From the correlation plot we can also see similar inferences.
+
+Other than insurance, rest of the factors are significant.
+
+```{r}
+d = da
+d$mdeSI <- ifelse(d$mdeSI == "Yes", 1, 0)
+d$gender = as.numeric(unclass(d$gender))
+d$age = as.numeric(unclass(d$age))
+d$race = as.numeric(unclass(d$race))
+d$insurance = as.numeric(unclass(d$insurance))
+d$income = as.numeric(unclass(d$income))
+d$fatherInHH = as.numeric(unclass(d$fatherInHH))
+d$motherInHH = as.numeric(unclass(d$motherInHH))
+d$siblingU18 = as.numeric(unclass(d$siblingU18))
+d$parentInv = as.numeric(unclass(d$parentInv))
+d$schoolExp = as.numeric(unclass(d$schoolExp))
+
+(n2 = dim(d)[1])
+set.seed(2024)
+
+#Total dataset has been divided into 75% of training data and 25% of test data
+index_2 = sample(1:n2, 4500) 
+train_2 = d[index_2,] 
+test_2 = d[-index_2,]
+dim(train_2)
+dim(test_2)
+mcor = round(cor(d),2)
+
+```
+
+# RANDOM FOREST
+
+Since our library model handles the bagging process we will not go in details.
+
+We need to deceide the number of trees. We will be creating the random forest model with 100, 200, 300, 400, and 500 number of trees and will compare the accuracy and will go ahead with the one where we get the maximum accuracy. Since our computers can handle creating models for 6000 data entries easily we will go ahead and try this.
+
+```{r}
+# Define formula
+formula <- as.formula("mdeSI ~  year + gender + age + race + income + fatherInHH + siblingU18 + parentInv + schoolExp")
+
+# Choose a range of ntree values
+ntree_values <- c(100, 200, 300, 400, 500)
+
+# Initialize a vector to store model performance
+accuracy <- numeric(length(ntree_values))
+
+# Iterate over ntree values
+for (i in seq_along(ntree_values)) {
+  # Fit random forest model
+  rf_model <- randomForest(formula, data = train, ntree = ntree_values[i])
+  
+  # Make predictions on test data
+  rf_preds <- predict(rf_model, test)
+  
+  # Compute accuracy
+  rf_accuracy <- mean(rf_preds == test$mdeSI)
+  accuracy[i] <- rf_accuracy
+}
+
+# Plot accuracy vs. ntree
+plot(ntree_values, accuracy, type = "b", xlab = "Number of Trees", ylab = "Accuracy", main = "Accuracy vs. Number of Trees")
+
+
+```
+
+### At 200 and 400 we are getting almost similar accuracy.
+
+We will go ahead with 200 number of trees.
+
+```{r}
+library(randomForest)
+
+# Fit random forest model
+rf_model <- randomForest(formula, data = train, ntree = 300)
+
+# Predict probabilities for train and test sets
+rf_probs_train <- predict(rf_model, train, type = "prob")[, "Yes"]
+rf_probs_test <- predict(rf_model, test, type = "prob")[, "Yes"]
+
+# Create ROC curves
+roc_train_rf <- roc(train$mdeSI, rf_probs_train)
+roc_test_rf <- roc(test$mdeSI, rf_probs_test)
+
+# Calculate AUC
+auc_train <- auc(roc_train_rf)
+auc_test <- auc(roc_test_rf)
+
+# Calculate accuracy
+accuracy_train <- mean(predict(rf_model, train) == train$mdeSI)
+accuracy_test <- mean(predict(rf_model, test) == test$mdeSI)
+
+# Calculate sensitivity (recall)
+sensitivity_train <- roc_train_rf$sensitivities[which.min(abs(roc_train_rf$specificities - 1/2))]
+sensitivity_test <- roc_test_rf$sensitivities[which.min(abs(roc_test_rf$specificities - 1/2))]
+
+# Plot ROC curves
+plot(roc_train_rf, col = "blue", main = "ROC Curve for Train and Test Models")
+lines(roc_test_rf, col = "red")
+
+# Add legend
+legend("bottomright", legend = c("Train", "Test"), col = c("blue", "red"), lty = 1)
+
+# Print performance metrics
+cat("Train AUC:", auc_train, "\n")
+cat("Test AUC:", auc_test, "\n")
+cat("Train Accuracy:", accuracy_train, "\n")
+cat("Test Accuracy:", accuracy_test, "\n")
+cat("Train Sensitivity (Recall):", sensitivity_train, "\n")
+cat("Test Sensitivity (Recall):", sensitivity_test, "\n")
+
+```
+
+### Model Performance Analysis
+
+#### Accuracy and AUC
+
+-   **Train Accuracy and AUC**: The model achieved a training accuracy of 86.22% and an AUC of 0.929. These metrics suggest that the model is highly effective on the training set, demonstrating strong capability in accurately identifying both true positives and true negatives.
+
+-   **Test Accuracy and AUC**: On the test set, the model recorded an accuracy of 82.2% and an AUC of 0.886. While these figures are slightly lower than those of the training set, they still indicate a robust performance, affirming the model's ability to generalize to unseen data effectively.
+
+#### Sensitivity (Recall)
+
+-   **Train Sensitivity**: A train sensitivity of 95.54% indicates that the model is exceptionally proficient at identifying true positives (adolescents actually experiencing mdeSI) within the training data.
+
+-   **Test Sensitivity**: The test sensitivity of 91.55% underscores the model's effectiveness in detecting the majority of true positive cases in the test set. This metric is critical for clinical settings to ensure that adolescents with mdeSI are not overlooked.
+
+### Discussion
+
+The Random Forest model leverages an ensemble method to manage the complexities and variability within the dataset effectively. By building multiple decision trees and combining their outcomes, the model reduces the risk of overfitting while maintaining excellent sensitivity and accuracy. This robustness makes the Random Forest an invaluable predictive tool for identifying major depressive episodes with severe impairment among adolescents.
+
+### ROC Curve Analysis
+
+The ROC curves, representing both the training and testing phases, demonstrate the trade-off between sensitivity and specificity across different thresholds. The high AUC values indicate that the model is capable of distinguishing between adolescents with and without mdeSI effectively, across a broad range of decision thresholds.
+
+### Clinical Implications
+
+The high sensitivity of the model is crucial in a clinical context, ensuring that a significant majority of at-risk adolescents are identified. While the slight drop in sensitivity and accuracy on the test set suggests some potential for overfitting, it could also indicate natural variability in the test data, which is important for realistic clinical expectations.
+
+### Future Recommendations
+
+-   **Cross-Validation**: Implement k-fold cross-validation to verify the model's stability and enhance its generalizability.
+-   **Feature Engineering**: Investigate additional features or interactions among existing features to capture more complex associations within the data.
+-   **Alternative Models**: Evaluate other predictive models like Support Vector Machines (SVM) or Logistic Regression to determine if they provide superior or complementary performance.
+
+This comprehensive evaluation of the Random Forest model emphasizes its potential as a strategic tool in psychiatric epidemiology, particularly for the early detection and screening of severe depression in adolescents.
+
+# LOGISTIC REGRESSION:
+
+```{r}
+library(pROC)
+
+# Fit the logistic regression model
+model.train <- glm(formula, family = binomial(logit), data = train)
+
+# Prediction probabilities for the testing set
+prob.test <- predict(model.train, test, type = "response")
+
+# Sequence of thresholds
+thresholds <- seq(0, 1, by = 0.01)
+
+# Initialize a vector to store F1 scores
+f1_scores <- numeric(length(thresholds))
+
+# Calculate F1 scores for each threshold
+for(i in seq_along(thresholds)) {
+  preds <- ifelse(prob.test > thresholds[i], "Yes", "No")
+  CM <- table(test$mdeSI, preds)
+
+  # Check if both dimensions exist
+  if (all(c("Yes", "No") %in% rownames(CM)) && all(c("Yes", "No") %in% colnames(CM))) {
+    precision <- CM["Yes", "Yes"] / sum(CM[, "Yes"])
+    recall <- CM["Yes", "Yes"] / sum(CM["Yes", ])
+    f1_scores[i] <- 2 * precision * recall / (precision + recall)
+  } else {
+    f1_scores[i] <- NA  # Assign NA where F1 cannot be computed
+  }
+}
+
+# Remove NA values for finding the maximum
+valid_f1_scores <- f1_scores[!is.na(f1_scores)]
+optimal_threshold <- thresholds[which.max(valid_f1_scores)]
+
+# Print the optimal threshold
+cat("Optimal Threshold:", optimal_threshold, "\n")
+
+
+```
+
+```{r}
+library(pROC)
+
+# Fit the logistic regression model
+model.train = glm(formula, family = binomial(logit),
+                  data = train)
+summary(model.train)
+anova(model.train)
+
+# Prediction and probability computation for the training set
+prob.train = predict(model.train, train, type = "response")
+pred.train = ifelse(prob.train > 0.5, 1, 0)  # This assumes a threshold of 0.5
+
+# Confusion matrix for the training set
+CM.train = table(train$mdeSI, pred.train) 
+accuracy.train = sum(diag(CM.train)) / nrow(train)
+recall.train = CM.train[2,2] / sum(CM.train[2,])  
+precision.train = CM.train[2,2] / sum(CM.train[,2]) 
+
+# Prediction and probability computation for the testing set
+prob.test = predict(model.train, test, type = "response") 
+pred.test = ifelse(prob.test > 0.5, 1, 0)  # This assumes a threshold of 0.5
+
+# Confusion matrix for the testing set
+CM.test = table(test$mdeSI, pred.test) 
+accuracy.test = sum(diag(CM.test)) / nrow(test)
+recall.test = CM.test[2,2] / sum(CM.test[2,]) 
+precision.test = CM.test[2,2] / sum(CM.test[,2])
+
+# AUC value and ROC plot for the training set
+roc_train = roc(train$mdeSI, prob.train, levels = c("No", "Yes"))
+auc_train = auc(roc_train)
+
+# AUC value and ROC plot for the testing set
+roc_test = roc(test$mdeSI, prob.test, levels = c("No", "Yes"))
+auc_test = auc(roc_test)
+
+# Plotting the ROC curves
+plot(roc_train, col = "purple", main = "ROC Curve for Training and Testing Models")
+lines(roc_test, col = "red")
+legend("bottomright", legend = c("Train", "Test"), col = c("purple", "red"), lty = 1)
+
+cat("Train AUC:", auc_train, "\n")
+cat("Test AUC:", auc_test, "\n")
+cat("Train Accuracy:", accuracy_train, "\n")
+cat("Test Accuracy:", accuracy_test, "\n")
+cat("Train Sensitivity (Recall):", sensitivity_train, "\n")
+cat("Test Sensitivity (Recall):", sensitivity_test, "\n")
+```
+
+### Model Performance and Metrics
+
+#### AUC (Area Under the Curve)
+
+-   **Training AUC**: 0.909, demonstrating excellent model discrimination capability during training.
+-   **Testing AUC**: 0.901, indicating a high ability to discriminate between cases and controls in unseen data.
+
+#### Accuracy
+
+-   **Training Accuracy**: 86.22%, reflecting strong overall prediction accuracy in the training dataset.
+-   **Testing Accuracy**: 82.13%, showing a slight drop but still maintaining high predictive accuracy on new data.
+
+#### Sensitivity (Recall)
+
+-   **Training Sensitivity**: 95.76%, signifying that the model is extremely effective at identifying true positive cases in the training set.
+-   **Testing Sensitivity**: 92.23%, slightly lower than training but still very high, ensuring most true cases are correctly identified in the test set.
+
+### Model Coefficients and Significance
+
+The logistic regression output indicates several significant predictors of mdeSI: - **Gender (Female)**, **Age (14-15 and 16-17)**, **Race (Black)**, **Income (50,000 - 74,999)**, **Parental Involvement (low)**, and **School Experience (bad)** show significant effects on mdeSI, each with a p-value below 0.05, indicating strong evidence against the null hypothesis of no effect.
+
+### Graphical Analysis of ROC Curves
+
+-   The ROC curves confirm the model’s strong discriminatory power, with curves for both training and testing phases lying close to the top-left corner, denoting excellent sensitivity and specificity trade-offs.
+
+### Conclusions and Clinical Implications
+
+The logistic regression model has demonstrated high accuracy, exceptional sensitivity, and excellent AUC, making it a robust tool for predicting severe depressive impairments in adolescents. However, while accuracy and AUC are high, the moderate sensitivity in the testing phase suggests there might still be room for improvement, especially in clinical settings where high sensitivity is critical.
+
+### Future Recommendations
+
+-   **Advanced Feature Engineering**: Investigate more complex interactions between variables to capture deeper insights.
+-   **Model Tuning**: Adjust logistic regression parameters or explore regularization techniques to enhance model performance and prevent overfitting.
+-   **Comparative Analysis**: Contrast logistic regression findings with other models like Random Forest to find the best approach for different scenarios.
+
+This detailed analysis solidifies the utility of logistic regression in medical and psychological research, particularly for conditions like mdeSI where early and accurate detection is crucial. The high performance metrics suggest that with further tuning and validation, this model could be highly effective in clinical applications.
+
+## COMPARISON:
+
+Let's compare the performance metrics of the logistic regression model to the random forest model you previously shared:
+
+### Logistic Regression Results:
+
+-   **Train AUC:** 0.770
+-   **Test AUC:** 0.757
+-   **Train Accuracy:** 83.76%
+-   **Test Accuracy:** 82.93%
+-   **Train Sensitivity (Recall):** 59.31%
+-   **Test Sensitivity (Recall):** 59.13%
+
+### Random Forest Results:
+
+-   **Train AUC:** 0.930
+-   **Test AUC:** 0.885
+-   **Train Accuracy:** 86.96%
+-   **Test Accuracy:** 82.33%
+-   **Train Sensitivity (Recall):** 94.75%
+-   **Test Sensitivity (Recall):** 90.46%
+
+### Comparative Analysis:
+
+1.  **AUC (Area Under Curve):**
+    -   **Random Forest** consistently shows higher AUC values for both training and testing datasets, indicating better overall performance in distinguishing between the two classes (mdeSI vs. no mdeSI).
+    -   **Logistic Regression** has notably lower AUC values, suggesting it is less effective at ranking predictions accurately compared to the random forest.
+2.  **Accuracy:**
+    -   The **accuracy** of both models on the training set is relatively close, with Random Forest slightly higher.
+    -   On the test set, both models perform comparably, with Logistic Regression slightly edging out Random Forest. This suggests that while Random Forest might be overfitting slightly better to the training data, Logistic Regression generalizes slightly better to unseen data.
+3.  **Sensitivity (Recall):**
+    -   There is a significant difference in **sensitivity** between the two models. Random Forest demonstrates a much higher sensitivity, indicating it is more effective at identifying true positives (cases of mdeSI).
+    -   Logistic Regression's lower sensitivity might be a concern in clinical settings where missing a true case can be critical.
+
+### Conclusion:
+
+The Random Forest model generally outperforms the Logistic Regression in most metrics, especially in terms of AUC and sensitivity, which are crucial for the reliable classification of depressive episodes. Logistic Regression, while slightly better in test accuracy, falls short particularly in sensitivity, making it less suitable if the priority is to minimize false negatives.
+
+Given these observations, the choice between these models may depend on the specific clinical or operational requirements—whether the focus is on not missing cases (higher sensitivity) or on overall accuracy and generalization.
