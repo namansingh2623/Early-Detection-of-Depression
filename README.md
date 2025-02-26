@@ -1,4 +1,4 @@
-# Early Detection of Depression
+# Early Detection of Depression using R
 
 ## Project Overview
 This project focuses on analyzing depression among adolescents using machine learning models, specifically **Random Forest** and **Logistic Regression**, to predict **major depressive episodes with severe impairment (mdeSI)**.
